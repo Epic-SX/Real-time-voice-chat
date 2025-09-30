@@ -18,31 +18,19 @@ import { ItemType } from '@openai/realtime-api-beta/dist/lib/client.js';
 import { WavRecorder, WavStreamPlayer } from '../lib/wavtools/index.js';
 import { instructions } from '../utils/conversation_config.js';
 import { WavRenderer } from '../utils/wav_renderer';
+import { parseSpreadsheet, formatSpreadsheetDataForAI, generateDynamicContext, SpreadsheetData } from '../utils/spreadsheetParser';
+import { generateDynamicInstructions, analyzeBusinessType } from '../utils/dynamicConfigGenerator';
 
-import { X, Edit, Zap, ArrowUp, ArrowDown } from 'react-feather';
+import { X, Edit, Zap, ArrowUp, ArrowDown, Upload } from 'react-feather';
 import { Button } from '../components/button/Button';
-import { Toggle } from '../components/toggle/Toggle';
-import { Map } from '../components/Map';
+import { FileUpload } from '../components/FileUpload';
+// Removed Toggle import - VAD mode only
+// Removed Map import - weather section removed
 
 import './ConsolePage.scss';
 import { isJsxOpeningLikeElement } from 'typescript';
 
-/**
- * Type for result from get_weather() function call
- */
-interface Coordinates {
-  lat: number;
-  lng: number;
-  location?: string;
-  temperature?: {
-    value: number;
-    units: string;
-  };
-  wind_speed?: {
-    value: number;
-    units: string;
-  };
-}
+// Removed Coordinates interface - weather section removed
 
 /**
  * Type for all event logs
@@ -62,7 +50,7 @@ export function ConsolePage() {
   const apiKey = LOCAL_RELAY_SERVER_URL
     ? ''
     : localStorage.getItem('tmp::voice_api_key') ||
-      prompt('OpenAI API Key') ||
+      prompt('OpenAI APIキー') ||
       '';
   if (apiKey !== '') {
     localStorage.setItem('tmp::voice_api_key', apiKey);
@@ -116,14 +104,10 @@ export function ConsolePage() {
     [key: string]: boolean;
   }>({});
   const [isConnected, setIsConnected] = useState(false);
-  const [canPushToTalk, setCanPushToTalk] = useState(true);
-  const [isRecording, setIsRecording] = useState(false);
-  const [memoryKv, setMemoryKv] = useState<{ [key: string]: any }>({});
-  const [coords, setCoords] = useState<Coordinates | null>({
-    lat: 37.775593,
-    lng: -122.418137,
-  });
-  const [marker, setMarker] = useState<Coordinates | null>(null);
+  // Removed canPushToTalk state - VAD mode only
+  // Removed isRecording state - VAD mode only
+  // Removed memory and weather state variables
+  const [spreadsheetData, setSpreadsheetData] = useState<SpreadsheetData | null>(null);
 
   /**
    * Utility for formatting the timing of logs
@@ -181,17 +165,12 @@ export function ConsolePage() {
 
     // Connect to realtime API
     await client.connect();
-    client.sendUserMessageContent([
-      {
-        type: `input_text`,
-        text: `突然のお電話失礼いたします。X商事の高木と申します。弊社では、主に弁当店様向けにお米の販売を行っておりまして、今日はその中でもおすすめの商品をご紹介させていただければと思い、ご連絡いたしました。今少しだけお時間よろしいでしょうか？`,
-      },
-    ]);
+    
+    // Wait for user to start the conversation - no automatic trigger
 
-    if (client.getTurnDetectionType() === 'server_vad') {
-      await wavRecorder.record((data) => client.appendInputAudio(data.mono));
-    }
-  }, []);
+    // Always use VAD mode
+    await wavRecorder.record((data) => client.appendInputAudio(data.mono));
+  }, [spreadsheetData]);
 
   /**
    * Disconnect and reset conversation state
@@ -200,12 +179,7 @@ export function ConsolePage() {
     setIsConnected(false);
     setRealtimeEvents([]);
     setItems([]);
-    setMemoryKv({});
-    setCoords({
-      lat: 37.775593,
-      lng: -122.418137,
-    });
-    setMarker(null);
+    // Removed memory and weather state resets
 
     const client = clientRef.current;
     client.disconnect();
@@ -222,51 +196,27 @@ export function ConsolePage() {
     client.deleteItem(id);
   }, []);
 
-  /**
-   * In push-to-talk mode, start recording
-   * .appendInputAudio() for each sample
-   */
-  const startRecording = async () => {
-    setIsRecording(true);
-    const client = clientRef.current;
-    const wavRecorder = wavRecorderRef.current;
-    const wavStreamPlayer = wavStreamPlayerRef.current;
-    const trackSampleOffset = await wavStreamPlayer.interrupt();
-    if (trackSampleOffset?.trackId) {
-      const { trackId, offset } = trackSampleOffset;
-      await client.cancelResponse(trackId, offset);
-    }
-    await wavRecorder.record((data) => client.appendInputAudio(data.mono));
-  };
+  // Removed manual recording functions - VAD mode only
+
+  // Removed changeTurnEndType function - VAD mode only
 
   /**
-   * In push-to-talk mode, stop recording
+   * Handle spreadsheet file upload
    */
-  const stopRecording = async () => {
-    setIsRecording(false);
-    const client = clientRef.current;
-    const wavRecorder = wavRecorderRef.current;
-    await wavRecorder.pause();
-    client.createResponse();
-  };
-
-  /**
-   * Switch between Manual <> VAD mode for communication
-   */
-  const changeTurnEndType = async (value: string) => {
-    const client = clientRef.current;
-    const wavRecorder = wavRecorderRef.current;
-    if (value === 'none' && wavRecorder.getStatus() === 'recording') {
-      await wavRecorder.pause();
+  const handleFileUpload = useCallback((fileData: { file: File; data: ArrayBuffer }) => {
+    try {
+      const parsedData = parseSpreadsheet(fileData.file, fileData.data);
+      setSpreadsheetData(parsedData);
+      console.log('スプレッドシートが読み込まれました:', parsedData);
+      
+      // Show a message that the system is ready for rice sales conversation
+      if (parsedData.sheets['営業スクリプト']) {
+        console.log('営業スクリプトが読み込まれました。接続後、自然な営業会話を開始できます。');
+      }
+    } catch (error) {
+      console.error('スプレッドシートの読み込みに失敗しました:', error);
     }
-    client.updateSession({
-      turn_detection: value === 'none' ? null : { type: 'server_vad' },
-    });
-    if (value === 'server_vad' && client.isConnected()) {
-      await wavRecorder.record((data) => client.appendInputAudio(data.mono));
-    }
-    setCanPushToTalk(value === 'none');
-  };
+  }, []);
 
   /**
    * Auto-scroll the event logs
@@ -375,128 +325,36 @@ export function ConsolePage() {
     const wavStreamPlayer = wavStreamPlayerRef.current;
     const client = clientRef.current;
 
-    // Set instructions
-    client.updateSession({ instructions: instructions });
+    // Set instructions with spreadsheet data if available
+    let currentInstructions = instructions;
+    if (spreadsheetData) {
+      // Generate completely dynamic instructions based on spreadsheet content
+      const dynamicInstructions = generateDynamicInstructions(spreadsheetData);
+      const formattedData = formatSpreadsheetDataForAI(spreadsheetData);
+      const dynamicContext = generateDynamicContext(spreadsheetData);
+      
+      currentInstructions = `${dynamicInstructions}\n\n=== 動的営業データベース ===\n以下のデータを活用して、お客様の反応に応じて適切な情報を提供してください。データを参考にしながら、自然で個別化された会話を行ってください:\n\n${formattedData}\n\n${dynamicContext}\n\n=== データ活用の指針 ===\n1. 商品情報: お客様のニーズに応じて適切な商品を紹介\n2. 営業会話パターン: 状況に応じて適切な会話パターンを参考にする\n3. 会社情報: 信頼性を高めるために必要に応じて会社情報を提供\n4. FAQ: お客様の質問に対して適切な回答を提供\n5. その他の情報: 会話の流れに応じて関連情報を活用\n\n=== 会話の進め方 ===\n- お客様の話をよく聞き、適切な情報を選択して提供\n- データベースの情報を自然に織り込んで会話する\n- お客様の関心に応じて商品やサービスを紹介\n- 質問にはデータベースの情報を基に正確に回答\n- 会話の流れに応じて適切な情報を段階的に提供`;
+    }
+    client.updateSession({ instructions: currentInstructions });
     // Set transcription, otherwise we don't get user transcriptions back
     client.updateSession({ input_audio_transcription: { model: 'whisper-1' } });
+    // Force VAD mode
+    client.updateSession({ turn_detection: { type: 'server_vad' } });
 
-    // Add tools
-    client.addTool(
-      {
-        name: 'set_memory',
-        description: 'Saves important data about the user into memory.',
-        parameters: {
-          type: 'object',
-          properties: {
-            key: {
-              type: 'string',
-              description:
-                'The key of the memory value. Always use lowercase and underscores, no other characters.',
-            },
-            value: {
-              type: 'string',
-              description: 'Value can be anything represented as a string',
-            },
-          },
-          required: ['key', 'value'],
-        },
-      },
-      async ({ key, value }: { [key: string]: any }) => {
-        setMemoryKv((memoryKv) => {
-          const newKv = { ...memoryKv };
-          newKv[key] = value;
-          return newKv;
-        });
-        return { ok: true };
-      }
-    );
-    client.addTool(
-      {
-        name: 'get_weather',
-        description:
-          'Retrieves the weather for a given lat, lng coordinate pair. Specify a label for the location.',
-        parameters: {
-          type: 'object',
-          properties: {
-            lat: {
-              type: 'number',
-              description: 'Latitude',
-            },
-            lng: {
-              type: 'number',
-              description: 'Longitude',
-            },
-            location: {
-              type: 'string',
-              description: 'Name of the location',
-            },
-          },
-          required: ['lat', 'lng', 'location'],
-        },
-      },
-      async ({ lat, lng, location }: { [key: string]: any }) => {
-        setMarker({ lat, lng, location });
-        setCoords({ lat, lng, location });
-        const result = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,wind_speed_10m`
-        );
-        const json = await result.json();
-        const temperature = {
-          value: json.current.temperature_2m as number,
-          units: json.current_units.temperature_2m as string,
-        };
-        const wind_speed = {
-          value: json.current.wind_speed_10m as number,
-          units: json.current_units.wind_speed_10m as string,
-        };
-        setMarker({ lat, lng, location, temperature, wind_speed });
-        return json;
-      }
-    );
+    // Removed tool functions - weather and memory sections removed
 
     // handle realtime events from client + server for event logging
     client.on('realtime.event', (realtimeEvent: RealtimeEvent) => {
-      // Add Japanese status messages for specific events
-      let japaneseMessage = '';
-      if (realtimeEvent.event.type === 'conversation.item.input_audio_buffer.committed') {
-        japaneseMessage = '🎤 録音開始';
-      } else if (realtimeEvent.event.type === 'conversation.item.input_audio_buffer.speech_started') {
-        japaneseMessage = '💡 発話検出';
-      } else if (realtimeEvent.event.type === 'conversation.item.input_audio_buffer.speech_stopped') {
-        japaneseMessage = '🔇 0.5秒無音検出、録音終了';
-      } else if (realtimeEvent.event.type === 'conversation.item.input_audio_buffer.committed') {
-        japaneseMessage = '🔴 録音停止';
-      } else if (realtimeEvent.event.type === 'conversation.item.input_audio_transcription.completed') {
-        japaneseMessage = `📝 STT結果:${JSON.stringify(realtimeEvent.event.transcript)}`;
-      } else if (realtimeEvent.event.type === 'conversation.item.assistant_response.content.delta') {
-        japaneseMessage = '🤖 AI応答生成中...';
-      } else if (realtimeEvent.event.type === 'conversation.item.assistant_response.content.completed') {
-        japaneseMessage = `💬 Chat応答:${JSON.stringify(realtimeEvent.event.content)}`;
-      }
-
-      if (japaneseMessage) {
-        const japaneseEvent = {
-          ...realtimeEvent,
-          event: {
-            ...realtimeEvent.event,
-            japanese_message: japaneseMessage
-          }
-        };
-        setRealtimeEvents((realtimeEvents) => {
-          return realtimeEvents.concat(japaneseEvent);
-        });
-      } else {
-        setRealtimeEvents((realtimeEvents) => {
-          const lastEvent = realtimeEvents[realtimeEvents.length - 1];
-          if (lastEvent?.event.type === realtimeEvent.event.type) {
-            // if we receive multiple events in a row, aggregate them for display purposes
-            lastEvent.count = (lastEvent.count || 0) + 1;
-            return realtimeEvents.slice(0, -1).concat(lastEvent);
-          } else {
-            return realtimeEvents.concat(realtimeEvent);
-          }
-        });
-      }
+      setRealtimeEvents((realtimeEvents) => {
+        const lastEvent = realtimeEvents[realtimeEvents.length - 1];
+        if (lastEvent?.event.type === realtimeEvent.event.type) {
+          // if we receive multiple events in a row, aggregate them for display purposes
+          lastEvent.count = (lastEvent.count || 0) + 1;
+          return realtimeEvents.slice(0, -1).concat(lastEvent);
+        } else {
+          return realtimeEvents.concat(realtimeEvent);
+        }
+      });
     });
     client.on('error', (event: any) => console.error(event));
     client.on('conversation.interrupted', async () => {
@@ -528,7 +386,7 @@ export function ConsolePage() {
       // cleanup; resets to defaults
       client.reset();
     };
-  }, []);
+  }, [spreadsheetData]);
 
   /**
    * Render the application
@@ -537,7 +395,8 @@ export function ConsolePage() {
     <div data-component="ConsolePage">
       <div className="content-top">
         <div className="content-title">
-          <span>テレアポシステム</span>
+          <img src="/openai-logomark.svg" />
+          <span>リアルタイムコンソール</span>
         </div>
         <div className="content-api-key">
           {!LOCAL_RELAY_SERVER_URL && (
@@ -562,16 +421,16 @@ export function ConsolePage() {
                 <canvas ref={serverCanvasRef} />
               </div>
             </div>
-            <div className="content-block-title">会話ログ</div>
+            <div className="content-block-title">イベント</div>
             <div className="content-block-body" ref={eventsScrollRef}>
-              {!realtimeEvents.length && `接続待機中...`}
+              {!realtimeEvents.length && `接続を待機中...`}
               {realtimeEvents.map((realtimeEvent, i) => {
                 const count = realtimeEvent.count;
                 const event = { ...realtimeEvent.event };
                 if (event.type === 'input_audio_buffer.append') {
-                  event.audio = `[trimmed: ${event.audio.length} bytes]`;
+                  event.audio = `[切り詰め: ${event.audio.length} バイト]`;
                 } else if (event.type === 'response.audio.delta') {
-                  event.delta = `[trimmed: ${event.delta.length} bytes]`;
+                  event.delta = `[切り詰め: ${event.delta.length} バイト]`;
                 }
                 return (
                   <div className="event" key={event.event_id}>
@@ -612,7 +471,7 @@ export function ConsolePage() {
                           </span>
                         </div>
                         <div className="event-type">
-                          {event.japanese_message || event.type}
+                          {event.type}
                           {count && ` (${count})`}
                         </div>
                       </div>
@@ -628,9 +487,9 @@ export function ConsolePage() {
             </div>
           </div>
           <div className="content-block conversation">
-            <div className="content-block-title">会話履歴</div>
+            <div className="content-block-title">会話</div>
             <div className="content-block-body" data-conversation-content>
-              {!items.length && `接続待機中...`}
+              {!items.length && `接続を待機中...`}
               {items.map((conversationItem, i) => {
                 return (
                   <div className="conversation-item" key={conversationItem.id}>
@@ -692,25 +551,39 @@ export function ConsolePage() {
             </div>
           </div>
           <div className="content-actions">
-            <Toggle
-              defaultValue={false}
-              labels={['手動', '自動']}
-              values={['none', 'server_vad']}
-              onChange={(_, value) => changeTurnEndType(value)}
-            />
-            <div className="spacer" />
-            {isConnected && canPushToTalk && (
-              <Button
-                label={isRecording ? '話し終わり' : '話す'}
-                buttonStyle={isRecording ? 'alert' : 'regular'}
-                disabled={!isConnected || !canPushToTalk}
-                onMouseDown={startRecording}
-                onMouseUp={stopRecording}
-              />
-            )}
+            <FileUpload onFileLoad={handleFileUpload} />
+            {spreadsheetData && (() => {
+              const dynamicContext = generateDynamicContext(spreadsheetData);
+              const hasProducts = dynamicContext.includes('商品販売モード');
+              const hasScripts = dynamicContext.includes('営業会話モード');
+              const hasCompanyInfo = dynamicContext.includes('会社情報モード');
+              const hasFAQ = dynamicContext.includes('FAQ対応モード');
+              
+              // Analyze business type for display
+              const businessType = analyzeBusinessType(spreadsheetData);
+              const roleDisplay = businessType.role || '営業担当';
+              const companyDisplay = businessType.company || 'エックス商事';
+              
+              return (
+                <div className="spreadsheet-info">
+                  <span>📊 {spreadsheetData.fileName} が読み込まれました</span>
+                  <div className="spreadsheet-details">
+                    <span>役割: {roleDisplay}</span>
+                    <span>会社: {companyDisplay}</span>
+                    {hasProducts && <span>商品情報: ✓</span>}
+                    {hasScripts && <span>営業スクリプト: ✓</span>}
+                    {hasCompanyInfo && <span>会社情報: ✓</span>}
+                    {hasFAQ && <span>FAQ: ✓</span>}
+                  </div>
+                  <div className="ready-message">
+                    準備完了！AIがスプレッドシートの内容に基づいて動的に会話します。
+                  </div>
+                </div>
+              );
+            })()}
             <div className="spacer" />
             <Button
-              label={isConnected ? '会話停止' : '会話開始'}
+              label={isConnected ? '切断' : '接続'}
               iconPosition={isConnected ? 'end' : 'start'}
               icon={isConnected ? X : Zap}
               buttonStyle={isConnected ? 'regular' : 'action'}
@@ -720,53 +593,7 @@ export function ConsolePage() {
             />
           </div>
         </div>
-        <div className="content-right">
-          <div className="content-block customer-info">
-            <div className="content-block-title">お客様情報</div>
-            <div className="content-block-body">
-              <div className="customer-details">
-                <div className="detail-item">
-                  <label>店舗名:</label>
-                  <span>{memoryKv.store_name || '未入力'}</span>
-                </div>
-                <div className="detail-item">
-                  <label>住所:</label>
-                  <span>{memoryKv.address || '未入力'}</span>
-                </div>
-                <div className="detail-item">
-                  <label>担当者:</label>
-                  <span>{memoryKv.contact_name || '未入力'}</span>
-                </div>
-                <div className="detail-item">
-                  <label>電話番号:</label>
-                  <span>{memoryKv.phone_number || '未入力'}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="content-block product-info">
-            <div className="content-block-title">商品情報</div>
-            <div className="content-block-body">
-              <div className="product-details">
-                <div className="product-item">
-                  <strong>近江ブレンド米 極小</strong>
-                  <span>500円/kg</span>
-                </div>
-                <div className="product-item">
-                  <strong>近江ブレンド米 小粒</strong>
-                  <span>588円/kg</span>
-                </div>
-                <div className="product-item">
-                  <strong>近江ブレンド米 中粒</strong>
-                  <span>720円/kg</span>
-                </div>
-                <div className="product-note">
-                  <small>送料込み、税別、30kg単位</small>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Removed weather and memory sections */}
       </div>
     </div>
   );

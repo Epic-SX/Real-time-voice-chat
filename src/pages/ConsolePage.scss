@@ -1,20 +1,58 @@
 [data-component='ConsolePage'] {
-  font-family: 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
+  font-family: 'Roboto Mono', monospace;
   font-weight: 400;
   font-style: normal;
-  font-size: 14px;
+  font-size: 12px;
   height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   margin: 0px 8px;
-  background-color: #f8f9fa;
   & > div {
     flex-shrink: 0;
   }
 
   .spacer {
     flex-grow: 1;
+  }
+
+  .spreadsheet-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px 16px;
+    background-color: #e8f5e8;
+    border: 1px solid #4caf50;
+    border-radius: 8px;
+    color: #2e7d32;
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+    
+    .spreadsheet-details {
+      display: flex;
+      gap: 16px;
+      margin-top: 4px;
+      font-size: 12px;
+      color: #4caf50;
+      
+      span {
+        background-color: #c8e6c9;
+        padding: 2px 8px;
+        border-radius: 12px;
+        font-weight: 600;
+      }
+    }
+    
+    .ready-message {
+      margin-top: 8px;
+      font-size: 13px;
+      color: #1b5e20;
+      font-weight: 600;
+      background-color: #a5d6a7;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
   }
 
   .content-top {
@@ -101,59 +139,14 @@
           }
         }
       }
-      & > div.customer-info {
-        height: 200px;
-        max-height: 200px;
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
+      & > div.kv {
+        height: 250px;
+        max-height: 250px;
+        white-space: pre;
+        background-color: #ececf1;
         .content-block-body {
           padding: 16px;
-          margin-top: 40px;
-        }
-        .customer-details {
-          .detail-item {
-            display: flex;
-            margin-bottom: 8px;
-            label {
-              font-weight: bold;
-              width: 80px;
-              flex-shrink: 0;
-            }
-            span {
-              color: #333;
-            }
-          }
-        }
-      }
-      & > div.product-info {
-        height: 200px;
-        max-height: 200px;
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        .content-block-body {
-          padding: 16px;
-          margin-top: 40px;
-        }
-        .product-details {
-          .product-item {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            padding: 4px 0;
-            border-bottom: 1px solid #f0f0f0;
-            strong {
-              color: #333;
-            }
-            span {
-              color: #666;
-              font-weight: bold;
-            }
-          }
-          .product-note {
-            margin-top: 12px;
-            color: #666;
-            font-size: 12px;
-          }
+          margin-top: 56px;
         }
       }
     }
